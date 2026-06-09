@@ -1,3 +1,13 @@
+"""
+Group model — a study group tied to one course.
+Many groups can belong to the same course. The owner (creator) can edit the
+group, remove members, and delete it. max_size >= 2 is enforced at the DB level.
+
+GroupMember is the junction table between users and groups (many-to-many).
+The composite PK (group_id, user_id) prevents duplicate membership at the DB
+level without needing a surrogate key.
+"""
+
 import uuid
 from sqlalchemy import String, Integer, ForeignKey, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMPTZ

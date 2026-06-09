@@ -1,3 +1,10 @@
+"""
+User model — central table for all registered students.
+Every other table references users either directly (via owner_id, user_id FKs)
+or indirectly. Stores login credentials (hashed), profile info, and email
+notification preference.
+"""
+
 import uuid
 from sqlalchemy import String, Boolean, Text
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMPTZ

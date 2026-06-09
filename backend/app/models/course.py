@@ -1,3 +1,9 @@
+"""
+Course model — global shared course catalogue, not per-user.
+Stores course codes (e.g. CS101) and names. One course can have many study
+groups. Groups reference courses via course_id FK.
+"""
+
 import uuid
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import UUID

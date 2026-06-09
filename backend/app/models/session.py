@@ -1,3 +1,22 @@
+"""
+Session, SessionSlot, and SlotVote models — the voting and scheduling core.
+
+Session: one voting/scheduling event within a group. Status follows a strict
+state machine (voting → scheduled → completed, or either → cancelled). All
+status writes go through SessionService.update_status(), never directly.
+
+SessionSlot: the 2–4 time options proposed by the group owner for a session.
+Each slot has a date, start time, duration, and optional location.
+
+SlotVote: junction table between users and session_slots (many-to-many).
+Composite PK (slot_id, user_id) prevents double votes at the DB level.
+Changing a vote = delete existing votes for that session, insert new ones.
+
+Circular FK note: sessions.confirmed_slot_id → session_slots.id, while
+session_slots.session_id → sessions.id. Resolved with use_alter=True so
+Alembic can generate the migration without a dependency error.
+"""
+
 import uuid
 import enum
 from sqlalchemy import String, Integer, Date, Time, ForeignKey, CheckConstraint

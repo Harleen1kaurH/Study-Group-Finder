@@ -1,3 +1,14 @@
+"""
+Notification model — in-app notification stack per user.
+Capped at 20 entries per user; on every insert the service deletes the oldest
+rows beyond 20 (no DB trigger needed). The frontend fetches the full stack on
+page load — no read/unread tracking, no filtering.
+
+type values: vote_open, session_confirmed, session_cancelled,
+             member_removed, voting_summary
+payload (JSONB): optional deep-link data, e.g. { group_id, session_id }
+"""
+
 import uuid
 from sqlalchemy import String, Text, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMPTZ, JSONB
