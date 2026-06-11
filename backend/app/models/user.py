@@ -7,7 +7,7 @@ notification preference.
 
 import uuid
 from sqlalchemy import String, Boolean, Text
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMPTZ
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from sqlalchemy.sql import func
 from app.db import Base
@@ -23,7 +23,7 @@ class User(Base):
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     availability: Mapped[str | None] = mapped_column(Text, nullable=True)
     email_notifications: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at = mapped_column(TIMESTAMPTZ, nullable=False, server_default=func.now())
+    created_at = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships
     owned_groups = relationship("Group", back_populates="owner", foreign_keys="Group.owner_id")

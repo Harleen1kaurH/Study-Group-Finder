@@ -21,7 +21,7 @@ import uuid
 import enum
 from sqlalchemy import String, Integer, Date, Time, ForeignKey, CheckConstraint
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMPTZ
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from sqlalchemy.sql import func
 from app.db import Base
@@ -48,8 +48,8 @@ class Session(Base):
         ForeignKey("session_slots.id", use_alter=True, name="fk_sessions_confirmed_slot"),
         nullable=True
     )
-    voting_deadline = mapped_column(TIMESTAMPTZ, nullable=False)
-    created_at = mapped_column(TIMESTAMPTZ, nullable=False, server_default=func.now())
+    voting_deadline = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships
     group = relationship("Group", back_populates="sessions")
@@ -81,7 +81,7 @@ class SlotVote(Base):
 
     slot_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("session_slots.id"), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
-    voted_at = mapped_column(TIMESTAMPTZ, nullable=False, server_default=func.now())
+    voted_at = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships
     slot = relationship("SessionSlot", back_populates="votes")

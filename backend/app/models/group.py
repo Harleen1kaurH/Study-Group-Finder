@@ -10,7 +10,7 @@ level without needing a surrogate key.
 
 import uuid
 from sqlalchemy import String, Integer, ForeignKey, CheckConstraint
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMPTZ
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import relationship, mapped_column, Mapped
 from sqlalchemy.sql import func
 from app.db import Base
@@ -27,7 +27,7 @@ class Group(Base):
     course_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("courses.id"), nullable=False)
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     max_size: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at = mapped_column(TIMESTAMPTZ, nullable=False, server_default=func.now())
+    created_at = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships
     course = relationship("Course", back_populates="groups")
@@ -42,7 +42,7 @@ class GroupMember(Base):
 
     group_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("groups.id"), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True)
-    joined_at = mapped_column(TIMESTAMPTZ, nullable=False, server_default=func.now())
+    joined_at = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships
     group = relationship("Group", back_populates="members")
