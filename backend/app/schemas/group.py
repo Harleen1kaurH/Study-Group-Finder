@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 class CreateGroupRequest(BaseModel):
     name: str
-    course_id: uuid.UUID
+    course_code: str  # e.g. CS101 — backend will look up the course by code
     # max_size must be at least 2 (enforced in DB too, but validated here first)
     max_size: int = Field(..., ge=2)
 

@@ -8,6 +8,11 @@ import uuid
 from pydantic import BaseModel
 
 
+class CreateCourseRequest(BaseModel):
+    code: str  # e.g. CS101
+    name: str  # e.g. Intro to Computer Science
+
+
 class CourseResponse(BaseModel):
     id: uuid.UUID
     code: str  # e.g. CS101
