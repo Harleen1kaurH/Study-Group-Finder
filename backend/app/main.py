@@ -27,8 +27,3 @@ app.include_router(sessions.router)
 
 # Notifications — in-app notification feed for the logged-in user
 app.include_router(notifications.router)
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
