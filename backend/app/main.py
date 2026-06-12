@@ -5,10 +5,40 @@ Creates the FastAPI app and registers all route modules.
 Each router handles one resource (auth, users, courses, groups, sessions, notifications).
 """
 
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from app.routes import auth, users, courses, groups, sessions, notifications
 
+# Set up logging so unexpected errors are printed to the terminal
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Study Group Finder")
+
+# Allow the frontend dev server to call this API
+# add your production URL here later when you deploy
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # frontend origin
+    allow_credentials=True,                   # allow cookies / auth headers
+    allow_methods=["*"],                      # allow GET, POST, PUT, DELETE, etc.
+    allow_headers=["*"],                      # allow Authorization and other headers
+)
+
+
+# Global exception handler — catches any unexpected error and returns clean JSON
+# HTTPExceptions (404, 403, etc.) are NOT caught here — FastAPI handles those normally
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Log the full traceback to the terminal for debugging
+    logger.exception("Unhandled error: %s", exc)
+    # Return a clean JSON response to the client
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
+
 
 # Authentication — register, login, logout
 app.include_router(auth.router)
@@ -27,3 +57,8 @@ app.include_router(sessions.router)
 
 # Notifications — in-app notification feed for the logged-in user
 app.include_router(notifications.router)
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
