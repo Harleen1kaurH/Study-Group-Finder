@@ -1,8 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata } from "next"; //gives autocompletion for when writing metadata
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "./lib/auth";
 
+
+//Load the Geist font, make it available through the CSS variable 
+//--font-geist-sans, and only download the Latin characters to keep things efficient.
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
