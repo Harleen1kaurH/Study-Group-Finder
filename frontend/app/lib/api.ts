@@ -1,4 +1,7 @@
-const BASE_URL = 'http://localhost:8000'
+// NEXT_PUBLIC_API_URL is set per-environment (Vercel project settings in
+// production, .env.local for local dev) so the same code talks to the local
+// FastAPI server in dev and the deployed backend in production.
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // Base fetch wrapper — credentials: 'include' sends the HttpOnly cookie automatically
 // All API functions call this instead of fetch directly
