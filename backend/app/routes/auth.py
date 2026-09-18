@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models.user import User
 from app.core.security import hash_password, verify_password, create_access_token
 from app.schemas.auth import RegisterRequest, LoginRequest
+from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -39,7 +40,13 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
 
     # Set the token as an HttpOnly cookie — JavaScript cannot read this
     token = create_access_token(str(user.id))
-    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax")
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+    )
     return {"message": "registered"}
 
 
@@ -58,12 +65,22 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
 
     # Set the token as an HttpOnly cookie — JavaScript cannot read this
     token = create_access_token(str(user.id))
-    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax")
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+    )
     return {"message": "logged in"}
 
 
 # Clear the auth cookie on logout
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie("access_token")
+    response.delete_cookie(
+        "access_token",
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+    )
     return {"message": "logged out"}

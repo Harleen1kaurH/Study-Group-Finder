@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import auth, users, courses, groups, sessions, notifications
 from app.core.scheduler import scheduler
+from app.core.config import settings
 
 # Set up logging so unexpected errors are printed to the terminal
 logger = logging.getLogger(__name__)
@@ -29,14 +30,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Study Group Finder", lifespan=lifespan)
 
-# Allow the frontend dev server to call this API
-# add your production URL here later when you deploy
+# Allowed frontend origin(s) come from settings, so the same code works in
+# local dev (localhost) and production (Vercel), just by changing the
+# ALLOWED_ORIGINS environment variable.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # frontend origin
-    allow_credentials=True,                   # allow cookies / auth headers
-    allow_methods=["*"],                      # allow GET, POST, PUT, DELETE, etc.
-    allow_headers=["*"],                      # allow Authorization and other headers
+    allow_origins=settings.allowed_origins_list,  # frontend origin(s)
+    allow_credentials=True,                       # allow cookies / auth headers
+    allow_methods=["*"],                          # allow GET, POST, PUT, DELETE, etc.
+    allow_headers=["*"],                          # allow Authorization and other headers
 )
 
 
