@@ -1,36 +1,42 @@
 const BASE_URL = 'http://localhost:8000'
 
-// Read the JWT token from localStorage
-function getToken(): string | null {
-    return localStorage.getItem('token')
-}
-
-// Base fetch wrapper — attaches auth header if token exists
+// Base fetch wrapper — credentials: 'include' sends the HttpOnly cookie automatically
 // All API functions call this instead of fetch directly
 async function request(path: string, options: RequestInit = {}) {
-    const token = getToken()
-
     const response = await fetch(`${BASE_URL}${path}`, {
         ...options,
+        credentials: 'include',  // send the HttpOnly auth cookie with every request
         headers: {
             'Content-Type': 'application/json',
-            // Only add Authorization header if token exists
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
             // Allow caller to override headers if needed
             ...options.headers,
         },
     })
 
-    // If the response is not 2xx, parse the error and throw it
+    // If the response is not 2xx, parse the error and throw it.
+    // FastAPI sends detail as a plain string for our own HTTPExceptions, but
+    // as a list of {loc, msg, type} objects for automatic validation errors
+    // (422s) — handle both instead of assuming it's always a string.
     if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Something went wrong')
+        const error = await response.json().catch(() => null)
+        let message = 'Something went wrong'
+        if (error) {
+            if (typeof error.detail === 'string') {
+                message = error.detail
+            } else if (Array.isArray(error.detail)) {
+                message = error.detail
+                    .map((d: { msg?: string }) => d.msg)
+                    .filter(Boolean)
+                    .join('; ') || message
+            }
+        }
+        throw new Error(message)
     }
 
     return response.json()
 }
 
-// --- Auth ---
+// Auth
 export const register = (email: string, password: string, name: string) =>
     request('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) })
 
@@ -40,23 +46,23 @@ export const login = (email: string, password: string) =>
 export const logout = () =>
     request('/auth/logout', { method: 'POST' })
 
-// --- Users ---
+// Users
 export const getMe = () =>
     request('/users/me')
 
 export const updateMe = (data: object) =>
     request('/users/me', { method: 'PUT', body: JSON.stringify(data) })
 
-// --- Courses ---
+// Courses
 export const getCourses = (code?: string) =>
     request(`/courses${code ? `?code=${code}` : ''}`)
 
 export const createCourse = (data: object) =>
     request('/courses', { method: 'POST', body: JSON.stringify(data) })
 
-// --- Groups ---
-export const getGroups = (course_id?: string) =>
-    request(`/groups${course_id ? `?course_id=${course_id}` : ''}`)
+// Groups
+export const getGroups = (course_code?: string) =>
+    request(`/groups${course_code ? `?course_code=${encodeURIComponent(course_code)}` : ''}`)
 
 export const createGroup = (data: object) =>
     request('/groups', { method: 'POST', body: JSON.stringify(data) })
@@ -79,7 +85,7 @@ export const leaveGroup = (id: string) =>
 export const removeMember = (groupId: string, userId: string) =>
     request(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' })
 
-// --- Sessions ---
+// Sessions
 export const getSessions = (groupId: string) =>
     request(`/groups/${groupId}/sessions`)
 
@@ -104,6 +110,10 @@ export const confirmSlot = (groupId: string, sessionId: string, slot_id: string)
 export const cancelSession = (groupId: string, sessionId: string) =>
     request(`/groups/${groupId}/sessions/${sessionId}/cancel`, { method: 'POST' })
 
-// --- Notifications ---
+// Notifications
 export const getNotifications = () =>
     request('/notifications')
+
+// Upcoming sessions (dashboard box)
+export const getUpcomingSessions = () =>
+    request('/users/me/upcoming-sessions')

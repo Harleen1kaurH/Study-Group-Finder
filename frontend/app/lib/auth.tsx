@@ -40,40 +40,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true) // start true — check for existing session
 
-    // On app load, check if a token exists in localStorage and fetch the current user
+    // On app load, try to fetch the current user using the HttpOnly cookie.
+    // If the cookie exists and is valid, getMe() succeeds and restores the session.
+    // If not (no cookie, or expired), it 401s and we know the user isn't logged in.
     useEffect(() => {
-        const token = localStorage.getItem('token')
-        if (token) {
-            // Token exists — fetch the user profile to restore the session
-            getMe()
-                .then(setUser)
-                .catch(() => {
-                    // Token is invalid or expired — clear it
-                    localStorage.removeItem('token')
-                })
-                .finally(() => setLoading(false))
-        } else {
-            // No token — not logged in
-            setLoading(false)
-        }
+        getMe()
+            .then(setUser)
+            .catch(() => {
+                // Not logged in — no cookie or token expired
+            })
+            .finally(() => setLoading(false))
     }, [])
 
-    // Call backend login, store the token, fetch user profile
+    // Call backend login — the backend sets the HttpOnly cookie on the response
     const login = async (email: string, password: string) => {
-        const data = await apiLogin(email, password)
-
-        // Save the token to localStorage so it persists across page refreshes
-        localStorage.setItem('token', data.access_token)
+        await apiLogin(email, password)
 
         // Fetch and store the user profile
         const me = await getMe()
         setUser(me)
     }
 
-    // Clear the token and user state
+    // Call backend logout — the backend clears the HttpOnly cookie
     const logout = async () => {
         await apiLogout()
-        localStorage.removeItem('token')
         setUser(null)
     }
 

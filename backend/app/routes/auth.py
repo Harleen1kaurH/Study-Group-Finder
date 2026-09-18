@@ -2,23 +2,23 @@
 auth.py — authentication routes.
 
 Handles user registration, login, and logout.
-JWT tokens are issued on login and must be sent with subsequent requests.
+Tokens are issued as HttpOnly cookies — JavaScript cannot read them.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.user import User
 from app.core.security import hash_password, verify_password, create_access_token
-from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
+from app.schemas.auth import RegisterRequest, LoginRequest
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 # Create a new user account with email, password, and name
-@router.post("/register", response_model=TokenResponse)
-def register(body: RegisterRequest, db: Session = Depends(get_db)):
+@router.post("/register")
+def register(body: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     # Check if email is already taken
     existing = db.query(User).filter(User.email == body.email).first()
     if existing:
@@ -37,13 +37,15 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # Return a token so the user is logged in immediately
-    return TokenResponse(access_token=create_access_token(str(user.id)))
+    # Set the token as an HttpOnly cookie — JavaScript cannot read this
+    token = create_access_token(str(user.id))
+    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax")
+    return {"message": "registered"}
 
 
-# Verify credentials and return a JWT access token
-@router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+# Verify credentials and set an HttpOnly cookie with the JWT
+@router.post("/login")
+def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)):
     # Look up user by email
     user = db.query(User).filter(User.email == body.email).first()
 
@@ -54,10 +56,14 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email or password",
         )
 
-    return TokenResponse(access_token=create_access_token(str(user.id)))
+    # Set the token as an HttpOnly cookie — JavaScript cannot read this
+    token = create_access_token(str(user.id))
+    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax")
+    return {"message": "logged in"}
 
 
-# Logout is stateless — client discards the token, nothing to do server-side
+# Clear the auth cookie on logout
 @router.post("/logout")
-def logout():
+def logout(response: Response):
+    response.delete_cookie("access_token")
     return {"message": "logged out"}

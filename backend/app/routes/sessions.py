@@ -7,8 +7,10 @@ The owner proposes time slots; members vote; the owner confirms one slot.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from apscheduler.jobstores.base import JobLookupError
 
 from app.db import get_db
 from app.dependencies import get_current_user
@@ -16,6 +18,14 @@ from app.models.group import Group, GroupMember
 from app.models.session import Session as StudySession, SessionSlot, SlotVote, SessionStatus
 from app.models.user import User
 from app.services.notifications import notify_group
+from app.core.scheduler import scheduler
+from app.services.scheduled_notifications import send_vote_summary, send_session_reminder
+
+
+def _reminder_job_ids(session_id: uuid.UUID) -> list[str]:
+    # Deterministic job IDs for a session's alarms, used for replace_existing
+    # and for cleanup on cancel.
+    return [f"vote_summary_{session_id}", f"reminder_24h_{session_id}", f"reminder_1h_{session_id}"]
 from app.schemas.session import (
     CreateSessionRequest,
     VoteRequest,
@@ -51,11 +61,18 @@ def is_member(group_id: uuid.UUID, user_id: uuid.UUID, db: Session) -> bool:
     ).first() is not None
 
 
-def build_session_response(session: StudySession, db: Session) -> SessionResponse:
-    """Helper — build SessionResponse with vote counts for each slot."""
+def build_session_response(session: StudySession, db: Session, is_owner: bool, current_user_id: uuid.UUID) -> SessionResponse:
+    """Helper — build SessionResponse. Vote counts are owner-only (per design
+    decision): non-owners get vote_count=None for every slot instead of the
+    real number. voted_by_me is different, since it's always populated for
+    whoever is asking, as it only reveals the asker's own vote."""
     slots = []
     for slot in session.slots:
-        vote_count = db.query(SlotVote).filter(SlotVote.slot_id == slot.id).count()
+        vote_count = db.query(SlotVote).filter(SlotVote.slot_id == slot.id).count() if is_owner else None
+        voted_by_me = db.query(SlotVote).filter(
+            SlotVote.slot_id == slot.id,
+            SlotVote.user_id == current_user_id,
+        ).first() is not None
         slots.append(SessionSlotResponse(
             id=slot.id,
             slot_date=slot.slot_date,
@@ -63,10 +80,12 @@ def build_session_response(session: StudySession, db: Session) -> SessionRespons
             duration_minutes=slot.duration_minutes,
             location=slot.location,
             vote_count=vote_count,
+            voted_by_me=voted_by_me,
         ))
     return SessionResponse(
         id=session.id,
         group_id=session.group_id,
+        name=session.name,
         status=session.status,
         voting_deadline=session.voting_deadline,
         confirmed_slot_id=session.confirmed_slot_id,
@@ -77,12 +96,17 @@ def build_session_response(session: StudySession, db: Session) -> SessionRespons
 
 # Return all sessions for a group
 @router.get("", response_model=list[SessionResponse])
-def list_sessions(group_id: uuid.UUID, db: Session = Depends(get_db)):
+def list_sessions(
+    group_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     # Verify the group exists
-    get_group_or_404(group_id, db)
+    group = get_group_or_404(group_id, db)
+    is_owner = group.owner_id == current_user.id
 
     sessions = db.query(StudySession).filter(StudySession.group_id == group_id).all()
-    return [build_session_response(s, db) for s in sessions]
+    return [build_session_response(s, db, is_owner, current_user.id) for s in sessions]
 
 
 # Create a new session with proposed time slots — owner only
@@ -102,6 +126,7 @@ def create_session(
     # Create the session with status=voting
     session = StudySession(
         group_id=group_id,
+        name=body.name,
         voting_deadline=body.voting_deadline,
         status=SessionStatus.voting,
     )
@@ -122,23 +147,45 @@ def create_session(
     db.commit()
     db.refresh(session)
 
-    # Notify all group members that voting is open
+    # Notify all group members that voting is open — name the group and
+    # course so the notification is meaningful on its own, without the
+    # member having to click through to figure out which session this is.
     notify_group(
         db,
         group_id=group_id,
         type="vote_open",
-        message="Voting is open for a new study session",
+        message=f"Voting is open for '{session.name}' in {group.name} ({group.course.code})",
         payload={"group_id": str(group_id), "session_id": str(session.id)},
     )
-    return build_session_response(session, db)
+
+    # Set the vote-summary alarm for exactly the voting deadline (spec Step 4).
+    # This fires regardless of whether the owner confirms early; cancel_session
+    # is what removes it, not an early confirm.
+    scheduler.add_job(
+        send_vote_summary,
+        trigger="date",
+        run_date=body.voting_deadline,
+        args=[str(session.id)],
+        id=f"vote_summary_{session.id}",
+        replace_existing=True,
+        misfire_grace_time=None,  # run it even if the server was down when this was due
+    )
+
+    return build_session_response(session, db, is_owner=True, current_user_id=current_user.id)
 
 
 # Return details of a single session including its slots and vote counts
 @router.get("/{session_id}", response_model=SessionResponse)
-def get_session(group_id: uuid.UUID, session_id: uuid.UUID, db: Session = Depends(get_db)):
-    get_group_or_404(group_id, db)
+def get_session(
+    group_id: uuid.UUID,
+    session_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    group = get_group_or_404(group_id, db)
     session = get_session_or_404(session_id, group_id, db)
-    return build_session_response(session, db)
+    is_owner = group.owner_id == current_user.id
+    return build_session_response(session, db, is_owner, current_user.id)
 
 
 # Cast or change the logged-in user's vote for a time slot
@@ -160,6 +207,13 @@ def vote_on_slot(
     # Session must be in voting status
     if session.status != SessionStatus.voting:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Voting is closed for this session")
+
+    # Voting window is exactly 24h from proposal time. Status stays "voting"
+    # until the owner confirms or cancels (per spec), but no NEW votes are
+    # accepted once the deadline has passed — checked live on every vote
+    # attempt rather than via any background job.
+    if datetime.now(timezone.utc) >= session.voting_deadline:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The voting deadline has passed")
 
     # The slot must belong to this session
     slot = db.get(SessionSlot, body.slot_id)
@@ -219,10 +273,29 @@ def confirm_slot(
         db,
         group_id=group_id,
         type="session_confirmed",
-        message="A study session has been confirmed",
+        message=f"'{session.name}' has been confirmed in {group.name} ({group.course.code})",
         payload={"group_id": str(group_id), "session_id": str(session_id)},
     )
-    return build_session_response(session, db)
+
+    # Set the T-24h and T-1h reminder alarms (spec Step 6), relative to the
+    # confirmed slot's actual date/time, not the voting deadline. Skip any
+    # that would fire in the past (e.g. confirming a slot less than 24h away).
+    start_dt = datetime.combine(slot.slot_date, slot.start_time, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    for hours_before in (24, 1):
+        run_date = start_dt - timedelta(hours=hours_before)
+        if run_date > now:
+            scheduler.add_job(
+                send_session_reminder,
+                trigger="date",
+                run_date=run_date,
+                args=[str(session.id), hours_before],
+                id=f"reminder_{hours_before}h_{session.id}",
+                replace_existing=True,
+                misfire_grace_time=None,
+            )
+
+    return build_session_response(session, db, is_owner=True, current_user_id=current_user.id)
 
 
 # Cancel a session — owner only
@@ -256,7 +329,16 @@ def cancel_session(
         db,
         group_id=group_id,
         type="session_cancelled",
-        message="A study session has been cancelled",
+        message=f"'{session.name}' has been cancelled in {group.name} ({group.course.code})",
         payload={"group_id": str(group_id), "session_id": str(session_id)},
     )
-    return build_session_response(session, db)
+
+    # Cancel any alarms still pending for this session, since a vote summary
+    # or a reminder for a session that's been called off isn't useful.
+    for job_id in _reminder_job_ids(session.id):
+        try:
+            scheduler.remove_job(job_id)
+        except JobLookupError:
+            pass  # already fired, or never got scheduled, so nothing to remove
+
+    return build_session_response(session, db, is_owner=True, current_user_id=current_user.id)

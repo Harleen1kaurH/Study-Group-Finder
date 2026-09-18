@@ -5,7 +5,7 @@ rows beyond 20 (no DB trigger needed). The frontend fetches the full stack on
 page load — no read/unread tracking, no filtering.
 
 type values: vote_open, session_confirmed, session_cancelled,
-             member_removed, voting_summary
+             member_removed, voting_summary, session_reminder
 payload (JSONB): optional deep-link data, e.g. { group_id, session_id }
 """
 

@@ -10,8 +10,8 @@ __pycache__/
 venv-py312/
 *.egg-info/
 
-# Alembic
-alembic/versions/*.py
+# Alembic — migration files ARE tracked (they define the schema); only
+# __pycache__ inside versions/ is ignored, via the Python rule above.
 
 # OS
 .DS_Store

@@ -14,22 +14,49 @@ from app.dependencies import get_current_user
 from app.models.course import Course
 from app.models.group import Group, GroupMember
 from app.models.user import User
-from app.schemas.group import CreateGroupRequest, UpdateGroupRequest, GroupResponse
+from app.schemas.group import CreateGroupRequest, UpdateGroupRequest, GroupResponse, GroupDetailResponse, GroupMemberResponse
 from app.services.notifications import notify_user, notify_group
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 
-# Return all study groups, optionally filtered by course
+# Return all study groups, optionally filtered by course code
+# (the frontend search box filters by the human-readable code like "CS101",
+# not the course's internal UUID, so we join and match on Course.code)
 @router.get("", response_model=list[GroupResponse])
-def list_groups(course_id: uuid.UUID | None = None, db: Session = Depends(get_db)):
+def list_groups(
+    course_code: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     query = db.query(Group)
 
-    # Filter by course if provided
-    if course_id is not None:
-        query = query.filter(Group.course_id == course_id)
+    if course_code:
+        query = query.join(Course, Group.course_id == Course.id).filter(
+            Course.code.ilike(f"%{course_code}%")
+        )
 
-    return query.all()
+    groups = query.all()
+
+    # Which of these groups is the current user already a member of? One
+    # query up front instead of a per-group check.
+    member_group_ids = {
+        gm.group_id
+        for gm in db.query(GroupMember).filter(GroupMember.user_id == current_user.id).all()
+    }
+
+    return [
+        GroupResponse(
+            id=g.id,
+            name=g.name,
+            course_id=g.course_id,
+            owner_id=g.owner_id,
+            max_size=g.max_size,
+            created_at=g.created_at,
+            is_member=g.id in member_group_ids,
+        )
+        for g in groups
+    ]
 
 
 # Create a new study group — logged-in user becomes the owner
@@ -65,8 +92,9 @@ def create_group(
     return group
 
 
-# Return details of a single group by ID
-@router.get("/{group_id}", response_model=GroupResponse)
+# Return details of a single group by ID — bundles the member list in
+# (matches the "GET group details bundles all nested data" decision)
+@router.get("/{group_id}", response_model=GroupDetailResponse)
 def get_group(group_id: uuid.UUID, db: Session = Depends(get_db)):
     group = db.get(Group, group_id)
     if group is None:
@@ -74,7 +102,19 @@ def get_group(group_id: uuid.UUID, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Group not found",
         )
-    return group
+    members = [
+        GroupMemberResponse(user_id=gm.user_id, name=gm.user.name)
+        for gm in group.members
+    ]
+    return GroupDetailResponse(
+        id=group.id,
+        name=group.name,
+        course_id=group.course_id,
+        owner_id=group.owner_id,
+        max_size=group.max_size,
+        created_at=group.created_at,
+        members=members,
+    )
 
 
 # Update group details — owner only

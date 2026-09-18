@@ -6,15 +6,28 @@ Each router handles one resource (auth, users, courses, groups, sessions, notifi
 """
 
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import auth, users, courses, groups, sessions, notifications
+from app.core.scheduler import scheduler
 
 # Set up logging so unexpected errors are printed to the terminal
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Study Group Finder")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the background alarm clock when the app boots, stop it on shutdown.
+    # Jobs scheduled before a restart are persisted in Postgres (see
+    # core/scheduler.py) and picked back up here.
+    scheduler.start()
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(title="Study Group Finder", lifespan=lifespan)
 
 # Allow the frontend dev server to call this API
 # add your production URL here later when you deploy

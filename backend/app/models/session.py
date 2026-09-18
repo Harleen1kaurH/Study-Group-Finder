@@ -39,6 +39,7 @@ class Session(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     group_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("groups.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False, server_default="Study Session")
     status: Mapped[SessionStatus] = mapped_column(SAEnum(SessionStatus, name="session_status"), nullable=False, default=SessionStatus.voting)
 
     # Circular FK: sessions.confirmed_slot_id -> session_slots.id

@@ -31,5 +31,22 @@ class GroupResponse(BaseModel):
     owner_id: uuid.UUID
     max_size: int
     created_at: datetime
+    # Only populated by the list endpoint (whether the CURRENT user is a
+    # member of this group) — defaults False elsewhere since it's unused there.
+    is_member: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class GroupMemberResponse(BaseModel):
+    user_id: uuid.UUID
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class GroupDetailResponse(GroupResponse):
+    """Used only by GET /groups/{id} — bundles the member list into the
+    response so the frontend doesn't need a second request (per the
+    locked-in decision that group details return all nested data at once)."""
+    members: list[GroupMemberResponse]
